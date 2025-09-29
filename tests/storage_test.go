@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourusername/browser_render_go/src/storage"
+	"github.com/yhonda-ohishi/browser_render_go/src/storage"
 )
 
 func TestStorage(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourusername/browser_render_go/src/browser"
-	"github.com/yourusername/browser_render_go/src/config"
-	"github.com/yourusername/browser_render_go/src/storage"
+	"github.com/yhonda-ohishi/browser_render_go/src/browser"
+	"github.com/yhonda-ohishi/browser_render_go/src/config"
+	"github.com/yhonda-ohishi/browser_render_go/src/storage"
 )
 
 func TestBrowserRenderer(t *testing.T) {
