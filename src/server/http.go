@@ -81,10 +81,17 @@ func (s *HTTPServer) handleVehicleData(w http.ResponseWriter, r *http.Request) {
 
 	// Start background processing
 	go func() {
+		// Recover from panic to prevent server crash
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered from panic in background processing: %v", r)
+			}
+		}()
+
 		log.Printf("Starting background vehicle data retrieval...")
 
-		// Create a context with timeout for the background operation
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		// Create a context with longer timeout for the background operation
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
 		vehicleData, sessionID, honoAPIResponse, err := s.renderer.GetVehicleData(

@@ -364,17 +364,40 @@ func (r *Renderer) extractVehicleData(page *rod.Page, branchID, filterID string)
 	var result interface{}
 
 	for time.Since(startTime) < timeout {
-		completed := page.MustEval(`() => window.__vehicleDataCompleted`).Bool()
+
+		completedObj, err := page.Eval(`() => window.__vehicleDataCompleted`)
+		if err != nil {
+			log.Printf("Error checking completion: %v", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		completed := completedObj.Value.Bool()
 		if completed {
 			// Check for error
-			hasError := page.MustEval(`() => window.__vehicleDataError !== null`).Bool()
+			hasErrorObj, err := page.Eval(`() => window.__vehicleDataError !== null`)
+			if err != nil {
+				log.Printf("Error checking for errors: %v", err)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			hasError := hasErrorObj.Value.Bool()
 			if hasError {
-				errorMsg := page.MustEval(`() => window.__vehicleDataError`).String()
+				errorMsgObj, _ := page.Eval(`() => window.__vehicleDataError`)
+				errorMsg := ""
+				if errorMsgObj != nil {
+					errorMsg = errorMsgObj.Value.String()
+				}
 				return nil, fmt.Errorf("service error: %s", errorMsg)
 			}
 
 			// Get result
-			result = page.MustEval(`() => window.__vehicleDataResult`).Val()
+			resultObj, err := page.Eval(`() => window.__vehicleDataResult`)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get vehicle data result: %w", err)
+			}
+			result = resultObj.Value.Val()
 			log.Printf("Got vehicle data response after %v", time.Since(startTime))
 			break
 		}
