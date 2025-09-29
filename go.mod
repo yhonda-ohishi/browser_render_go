@@ -2,6 +2,13 @@ module github.com/yhonda-ohishi/browser_render_go
 
 go 1.21
 
+replace (
+	github.com/yhonda-ohishi/browser_render_go/src/browser => ./src/browser
+	github.com/yhonda-ohishi/browser_render_go/src/config => ./src/config
+	github.com/yhonda-ohishi/browser_render_go/src/server => ./src/server
+	github.com/yhonda-ohishi/browser_render_go/src/storage => ./src/storage
+)
+
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-rod/rod v0.116.2 // indirect
