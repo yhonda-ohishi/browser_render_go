@@ -25,10 +25,11 @@ docker-compose up -d
 # ヘルスチェック
 curl http://localhost:8080/health
 
-# 車両データ取得
-curl -X POST http://localhost:8080/v1/vehicle/data \
-  -H "Content-Type: application/json" \
-  -d '{"branch_id":"","filter_id":"0","force_login":false}'
+# 車両データ取得（ジョブ作成）
+curl http://localhost:8080/v1/vehicle/data
+
+# ジョブ一覧確認
+curl http://localhost:8080/v1/jobs
 ```
 
 ## 🛠️ 使用可能なコマンド
@@ -40,6 +41,9 @@ docker-compose up -d
 
 # ログ確認
 docker-compose logs -f
+
+# スケジューラーログ確認
+docker-compose logs scheduler
 
 # 停止
 docker-compose down
@@ -89,6 +93,9 @@ GRPC_PORT=50051
 BROWSER_HEADLESS=true
 BROWSER_TIMEOUT=60s
 BROWSER_DEBUG=false
+
+# スケジューラー設定
+CRON_SCHEDULE=*/10 * * * *  # 10分間隔（変更可能）
 ```
 
 ### Docker Composeプロファイル
