@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yourusername/browser_render_go/src/browser"
-	"github.com/yourusername/browser_render_go/src/config"
-	"github.com/yourusername/browser_render_go/src/server"
-	"github.com/yourusername/browser_render_go/src/storage"
+	"github.com/yhonda-ohishi/browser_render_go/src/browser"
+	"github.com/yhonda-ohishi/browser_render_go/src/config"
+	"github.com/yhonda-ohishi/browser_render_go/src/server"
+	"github.com/yhonda-ohishi/browser_render_go/src/storage"
 )
 
 func main() {

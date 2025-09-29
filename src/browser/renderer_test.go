@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourusername/browser_render_go/src/config"
-	"github.com/yourusername/browser_render_go/src/storage"
+	"github.com/yhonda-ohishi/browser_render_go/src/config"
+	"github.com/yhonda-ohishi/browser_render_go/src/storage"
 )
 
 func TestNewRenderer_Config(t *testing.T) {

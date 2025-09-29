@@ -13,8 +13,8 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
-	"github.com/yourusername/browser_render_go/src/config"
-	"github.com/yourusername/browser_render_go/src/storage"
+	"github.com/yhonda-ohishi/browser_render_go/src/config"
+	"github.com/yhonda-ohishi/browser_render_go/src/storage"
 )
 
 type Renderer struct {
