@@ -2,7 +2,10 @@ version: '3.8'
 
 services:
   browser-render:
-    image: ghcr.io/yhonda-ohishi/browser-render-go:latest
+    # GitHubからクローンして自動ビルド
+    build:
+      context: https://github.com/yhonda-ohishi/browser_render_go.git
+      dockerfile: Dockerfile
     container_name: browser-render-server
     environment:
       # 認証情報を設定してください

@@ -2,6 +2,23 @@
 
 Go実装のブラウザ自動化サービス。Cloudflare Puppeteer Workerの機能をgRPC/HTTPサービスとして提供します。
 
+## 🚀 クイックスタート（クローン不要）
+
+### ワンライナー実行
+
+```bash
+# Docker環境があれば即座に起動可能
+curl -sSL https://raw.githubusercontent.com/yhonda-ohishi/browser_render_go/master/run.sh | bash
+```
+
+### Docker Composeのみで実行
+
+```bash
+# docker-compose.ymlをダウンロードして起動
+curl -O https://raw.githubusercontent.com/yhonda-ohishi/browser_render_go/master/docker-compose.standalone.yml
+docker-compose -f docker-compose.standalone.yml up -d
+```
+
 ## 🚀 特徴
 
 - **gRPC & HTTP API**: 両方のプロトコルをサポート
@@ -9,20 +26,21 @@ Go実装のブラウザ自動化サービス。Cloudflare Puppeteer Workerの機
 - **セッション管理**: SQLiteによる永続的なセッション・Cookie管理
 - **Protocol Buffers**: 型安全な通信
 - **Docker対応**: コンテナ化されたデプロイメント
+- **クローン不要**: GitHubから直接ビルド可能
 
 ## 📋 必要要件
 
-- Go 1.21以上
+- Docker & Docker Compose（クイックスタート用）
+- Go 1.21以上（ローカル開発用）
 - Chrome/Chromium
 - SQLite
-- Protocol Buffers コンパイラ (オプション)
 
-## 🛠️ セットアップ
+## 🛠️ セットアップ（開発者向け）
 
-### 1. クローンとセットアップ
+### 1. リポジトリクローン
 
 ```bash
-git clone https://github.com/yourusername/browser_render_go.git
+git clone https://github.com/yhonda-ohishi/browser_render_go.git
 cd browser_render_go
 go mod download
 ```
