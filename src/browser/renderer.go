@@ -1,12 +1,16 @@
 package browser
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +32,13 @@ type VehicleData struct {
 	VehicleName string            `json:"VehicleName"`
 	Status      string            `json:"Status"`
 	Metadata    map[string]string `json:"Metadata"`
+}
+
+type HonoAPIResponse struct {
+	Success      bool   `json:"success"`
+	RecordsAdded int    `json:"records_added"`
+	TotalRecords int    `json:"total_records"`
+	Message      string `json:"message"`
 }
 
 func NewRenderer(cfg *config.Config, store *storage.Storage) (*Renderer, error) {
@@ -79,9 +90,12 @@ func NewRenderer(cfg *config.Config, store *storage.Storage) (*Renderer, error) 
 	}, nil
 }
 
-func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filterID string, forceLogin bool) ([]VehicleData, string, error) {
+func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filterID string, forceLogin bool) ([]VehicleData, string, *HonoAPIResponse, error) {
 	log.Println("GetVehicleData called")
-	log.Printf("Parameters - SessionID: %s, BranchID: %s, FilterID: %s, ForceLogin: %v", sessionID, branchID, filterID, forceLogin)
+	// Use fixed parameters for initial request
+	branchID = "00000000"
+	filterID = "0"
+	log.Printf("Using fixed parameters - BranchID: %s, FilterID: %s, ForceLogin: %v", branchID, filterID, forceLogin)
 
 	page := r.browser.MustPage()
 	defer page.MustClose()
@@ -123,14 +137,14 @@ func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filter
 		// Need to login
 		newSessionID, err := r.login(page)
 		if err != nil {
-			return nil, "", fmt.Errorf("login failed: %w", err)
+			return nil, "", nil, fmt.Errorf("login failed: %w", err)
 		}
 		sessionID = newSessionID
 		log.Printf("Login successful, new session ID: %s", sessionID)
 
 		// Navigate again after login
 		if err := r.navigateToMain(page, branchID, filterID); err != nil {
-			return nil, "", fmt.Errorf("navigation failed after login: %w", err)
+			return nil, "", nil, fmt.Errorf("navigation failed after login: %w", err)
 		}
 		log.Println("Navigation to main page successful after login")
 	} else {
@@ -140,7 +154,7 @@ func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filter
 	// Extract vehicle data
 	vehicleData, err := r.extractVehicleData(page, branchID, filterID)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to extract vehicle data: %w", err)
+		return nil, "", nil, fmt.Errorf("failed to extract vehicle data: %w", err)
 	}
 
 	// Cache the data
@@ -148,7 +162,21 @@ func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filter
 		r.storage.CacheVehicleData(vehicle.VehicleCD, vehicle, 5*time.Minute)
 	}
 
-	return vehicleData, sessionID, nil
+	// Send data to Hono API
+	honoResponse, err := r.sendToHonoAPI(vehicleData)
+	if err != nil {
+		log.Printf("Warning: Failed to send to Hono API: %v", err)
+		// Don't fail the request if Hono API fails
+		honoResponse = &HonoAPIResponse{
+			Success:      false,
+			RecordsAdded: 0,
+			Message:      fmt.Sprintf("Failed to send to Hono API: %v", err),
+		}
+	} else {
+		log.Printf("Successfully sent to Hono API: %+v", honoResponse)
+	}
+
+	return vehicleData, sessionID, honoResponse, nil
 }
 
 func (r *Renderer) login(page *rod.Page) (string, error) {
@@ -415,6 +443,124 @@ func (r *Renderer) CheckSession(sessionID string) (bool, string) {
 
 func (r *Renderer) ClearSession(sessionID string) error {
 	return r.storage.DeleteSession(sessionID)
+}
+
+func (r *Renderer) sendToHonoAPI(vehicles []VehicleData) (*HonoAPIResponse, error) {
+	// Convert VehicleData to format expected by Hono API
+	honoData := r.convertToHonoFormat(vehicles)
+
+	// Send to Hono API
+	jsonData, err := json.Marshal(honoData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal data: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://hono-api.mtamaramu.com/api/dtakologs",
+		bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	return &HonoAPIResponse{
+		Success:      true,
+		RecordsAdded: len(honoData),
+		Message:      fmt.Sprintf("Successfully sent %d records to Hono API", len(honoData)),
+	}, nil
+}
+
+func (r *Renderer) convertToHonoFormat(vehicles []VehicleData) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(vehicles))
+
+	for _, vehicle := range vehicles {
+		data := make(map[string]interface{})
+
+		// Copy all metadata fields
+		for key, value := range vehicle.Metadata {
+			data[key] = r.convertToNumber(value)
+		}
+
+		// Generate VehicleCD from VehicleName if empty
+		vehicleCD := r.extractVehicleCode(vehicle.VehicleName)
+		if vehicleCD > 0 {
+			data["VehicleCD"] = vehicleCD
+		}
+
+		// Add VehicleName
+		data["VehicleName"] = vehicle.VehicleName
+
+		// Format DataDateTime
+		if dt, ok := data["DataDateTime"].(string); ok {
+			data["DataDateTime"] = r.formatDateTime(dt)
+		}
+
+		result = append(result, data)
+	}
+
+	return result
+}
+
+func (r *Renderer) convertToNumber(value string) interface{} {
+	if value == "" || value == "<nil>" {
+		return 0
+	}
+
+	// Try to convert to float
+	if f, err := strconv.ParseFloat(value, 64); err == nil {
+		return f
+	}
+
+	return value
+}
+
+func (r *Renderer) extractVehicleCode(vehicleName string) int {
+	if vehicleName == "" {
+		return 0
+	}
+
+	// Extract all numbers from vehicle name
+	re := regexp.MustCompile(`\d+`)
+	matches := re.FindAllString(vehicleName, -1)
+
+	if len(matches) > 0 {
+		// Combine all numbers
+		combined := strings.Join(matches, "")
+		if code, err := strconv.Atoi(combined); err == nil {
+			return code % 2147483647 // Keep within integer range
+		}
+	}
+
+	// Generate hash-based ID if no numbers found
+	hash := 0
+	for _, r := range vehicleName {
+		hash = hash*31 + int(r)
+	}
+	return hash % 2147483647
+}
+
+func (r *Renderer) formatDateTime(dt string) string {
+	if dt == "" || dt == "<nil>" {
+		return ""
+	}
+
+	// Remove "20" prefix if exists to avoid double prefixing
+	if strings.HasPrefix(dt, "20") {
+		return dt[2:]
+	}
+
+	return dt
 }
 
 func (r *Renderer) Close() error {

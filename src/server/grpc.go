@@ -88,7 +88,7 @@ func (s *GRPCServer) GetVehicleData(ctx context.Context, req *GetVehicleDataRequ
 	log.Printf("GetVehicleData called with branchId=%s, filterId=%s", req.BranchId, req.FilterId)
 
 	// Get vehicle data using the browser renderer
-	vehicleData, sessionID, err := s.renderer.GetVehicleData(
+	vehicleData, sessionID, _, err := s.renderer.GetVehicleData(
 		ctx,
 		"", // Session ID from request if needed
 		req.BranchId,

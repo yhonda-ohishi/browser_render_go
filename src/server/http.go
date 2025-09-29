@@ -97,7 +97,7 @@ func (s *HTTPServer) handleVehicleData(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 
-	vehicleData, sessionID, err := s.renderer.GetVehicleData(
+	vehicleData, sessionID, honoAPIResponse, err := s.renderer.GetVehicleData(
 		ctx,
 		"", // Session ID from cookie if needed
 		req.BranchID,
@@ -128,11 +128,23 @@ func (s *HTTPServer) handleVehicleData(w http.ResponseWriter, r *http.Request) {
 		data[i] = item
 	}
 
-	s.sendJSON(w, map[string]interface{}{
+	response := map[string]interface{}{
 		"status":     "complete",
 		"data":       data,
 		"session_id": sessionID,
-	}, http.StatusOK)
+	}
+
+	// Add Hono API response if available
+	if honoAPIResponse != nil {
+		response["hono_api"] = map[string]interface{}{
+			"success":       honoAPIResponse.Success,
+			"records_added": honoAPIResponse.RecordsAdded,
+			"total_records": honoAPIResponse.TotalRecords,
+			"message":       honoAPIResponse.Message,
+		}
+	}
+
+	s.sendJSON(w, response, http.StatusOK)
 }
 
 // Session check endpoint
