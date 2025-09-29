@@ -43,6 +43,27 @@ services:
     profiles:
       - debug
 
+  # スケジューラ: 10分おきにAPI実行
+  scheduler:
+    image: alpine:latest
+    container_name: browser-render-scheduler
+    environment:
+      - API_URL=http://browser-render:8080
+      - CRON_SCHEDULE=*/10 * * * *  # 10分おき
+    volumes:
+      - ./scripts:/scripts:ro
+    command: >
+      sh -c "
+        apk add --no-cache curl &&
+        echo '$${CRON_SCHEDULE} curl -X POST $${API_URL}/api/jobs -H \"Content-Type: application/json\" -d \"{\\\"action\\\":\\\"GetVehicleData\\\"}\" || echo \"API call failed at \$(date)\"' > /etc/crontabs/root &&
+        crond -f -d 8
+      "
+    restart: unless-stopped
+    networks:
+      - browser-net
+    depends_on:
+      - browser-render
+
 networks:
   browser-net:
     driver: bridge
