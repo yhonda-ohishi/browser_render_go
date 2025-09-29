@@ -1,0 +1,25 @@
+version: v1
+plugins:
+  # Go code generation
+  - plugin: go
+    out: gen/proto
+    opt: paths=source_relative
+
+  # Go gRPC code generation
+  - plugin: go-grpc
+    out: gen/proto
+    opt: paths=source_relative
+
+  # gRPC-Gateway generation
+  - plugin: grpc-gateway
+    out: gen/proto
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=true
+
+  # OpenAPI v2 spec generation
+  - plugin: openapiv2
+    out: gen/openapi
+    opt:
+      - allow_merge=true
+      - merge_file_name=browser_render

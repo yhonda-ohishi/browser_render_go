@@ -1,0 +1,32 @@
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Coverage files
+*.out
+coverage.html
+
+# Data files (can contain sensitive info)
+cookies.json
+vehicle_data.json
+data/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp

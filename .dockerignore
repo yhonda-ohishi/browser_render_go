@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Go
+*.test
+*.out
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+data/*.db
+logs/*
+gen/
+third_party/
+*.exe
+buf.exe
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+*_test.go
+tests/
+
+# Build artifacts
+bin/
+dist/

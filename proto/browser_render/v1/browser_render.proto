@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package browser_render.v1;
+
+option go_package = "github.com/yourusername/browser_render_go/gen/proto/browser_render/v1;browserv1";
+
+import "google/api/annotations.proto";
+
+service BrowserRenderService {
+  // 車両データを取得
+  rpc GetVehicleData(GetVehicleDataRequest) returns (GetVehicleDataResponse) {
+    option (google.api.http) = {
+      post: "/v1/vehicle/data"
+      body: "*"
+    };
+  }
+
+  // セッション状態を確認
+  rpc CheckSession(CheckSessionRequest) returns (CheckSessionResponse) {
+    option (google.api.http) = {
+      get: "/v1/session/check"
+    };
+  }
+
+  // セッションをクリア
+  rpc ClearSession(ClearSessionRequest) returns (ClearSessionResponse) {
+    option (google.api.http) = {
+      delete: "/v1/session/clear"
+    };
+  }
+
+  // ヘルスチェック
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (google.api.http) = {
+      get: "/health"
+    };
+  }
+}
+
+// リクエスト/レスポンスメッセージ
+message GetVehicleDataRequest {
+  string branch_id = 1;    // ブランチID（デフォルト: "00000000"）
+  string filter_id = 2;    // フィルターID（デフォルト: "0"）
+  bool force_login = 3;    // 強制ログインフラグ
+}
+
+message GetVehicleDataResponse {
+  string status = 1;              // 処理ステータスメッセージ
+  int32 status_code = 2;          // HTTPステータスコード
+  repeated VehicleData data = 3;  // 車両データリスト
+  string session_id = 4;          // セッションID
+}
+
+message VehicleData {
+  string vehicle_cd = 1;           // 車両コード
+  string vehicle_name = 2;         // 車両名
+  string status = 3;               // 車両ステータス
+  map<string, string> metadata = 4; // その他メタデータ
+}
+
+message CheckSessionRequest {
+  string session_id = 1;
+}
+
+message CheckSessionResponse {
+  bool is_valid = 1;
+  string message = 2;
+}
+
+message ClearSessionRequest {
+  string session_id = 1;
+}
+
+message ClearSessionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime = 3;
+}

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  browser-render:
+    build: .
+    container_name: browser-render-server
+    environment:
+      - USER_NAME=${USER_NAME}
+      - COMP_ID=${COMP_ID}
+      - USER_PASS=${USER_PASS}
+      - GRPC_PORT=50051
+      - HTTP_PORT=8080
+      - BROWSER_HEADLESS=true
+      - BROWSER_DEBUG=${BROWSER_DEBUG:-false}
+      - SQLITE_PATH=/app/data/browser_render.db
+      - SESSION_TTL=600000
+      - COOKIE_TTL=86400
+    ports:
+      - "50051:50051"  # gRPC port
+      - "8080:8080"    # HTTP port
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - browser-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Standalone Chrome for debugging
+  chrome-debug:
+    image: chromedp/headless-shell:latest
+    container_name: chrome-debug
+    ports:
+      - "9222:9222"
+    command: ["--remote-debugging-address=0.0.0.0", "--remote-debugging-port=9222", "--no-sandbox"]
+    networks:
+      - browser-net
+    profiles:
+      - debug
+
+networks:
+  browser-net:
+    driver: bridge
