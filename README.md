@@ -14,9 +14,15 @@ curl -sSL https://raw.githubusercontent.com/yhonda-ohishi/browser_render_go/mast
 ### Docker Composeのみで実行
 
 ```bash
-# docker-compose.ymlをダウンロードして起動
+# docker-compose.ymlをダウンロードして起動（10分間隔自動実行スケジューラー付き）
 curl -O https://raw.githubusercontent.com/yhonda-ohishi/browser_render_go/master/docker-compose.standalone.yml
 docker-compose -f docker-compose.standalone.yml up -d
+
+# ログ確認
+docker-compose -f docker-compose.standalone.yml logs -f
+
+# スケジューラーログのみ確認
+docker-compose -f docker-compose.standalone.yml logs scheduler
 ```
 
 ## 🚀 特徴
@@ -26,6 +32,7 @@ docker-compose -f docker-compose.standalone.yml up -d
 - **セッション管理**: SQLiteによる永続的なセッション・Cookie管理
 - **Protocol Buffers**: 型安全な通信
 - **Docker対応**: コンテナ化されたデプロイメント
+- **自動スケジューラー**: 10分間隔でのVenusデータ自動取得
 - **クローン不要**: GitHubから直接ビルド可能
 
 ## 📋 必要要件
@@ -103,20 +110,33 @@ docker-compose logs -f
 ### HTTP API
 
 ```bash
-# 車両データ取得
-curl -X POST http://localhost:8080/v1/vehicle/data \
-  -H "Content-Type: application/json" \
-  -d '{
-    "branch_id": "00000000",
-    "filter_id": "0",
-    "force_login": false
-  }'
+# 車両データ取得（手動実行）
+curl http://localhost:8080/v1/vehicle/data
+
+# ジョブ状態確認
+curl http://localhost:8080/v1/job/{job-id}
+
+# 全ジョブ一覧
+curl http://localhost:8080/v1/jobs
 
 # ヘルスチェック
 curl http://localhost:8080/health
 
 # セッション確認
 curl "http://localhost:8080/v1/session/check?session_id=xxx"
+```
+
+### 自動スケジューラー機能
+
+Docker Compose実行時に、10分間隔でVenusシステムから自動的に車両データを取得し、Hono APIに送信します。
+
+```bash
+# スケジューラー設定確認
+docker-compose logs scheduler
+
+# スケジューラー間隔変更（環境変数）
+export CRON_SCHEDULE="*/5 * * * *"  # 5分間隔に変更
+docker-compose up -d
 ```
 
 ### gRPC API
@@ -186,6 +206,7 @@ go test ./tests -run TestStorage
 | `BROWSER_TIMEOUT` | タイムアウト時間 | 30s |
 | `SQLITE_PATH` | データベースパス | ./data/browser_render.db |
 | `SESSION_TTL` | セッション有効期限 | 10m |
+| `CRON_SCHEDULE` | スケジューラー実行間隔 | */10 * * * * |
 
 ## 🚀 デプロイメント
 

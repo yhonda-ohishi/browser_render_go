@@ -31,6 +31,24 @@ services:
       retries: 3
       start_period: 40s
 
+  # スケジューラ: 10分おきに Venus データ取得API実行
+  scheduler:
+    image: alpine:latest
+    container_name: browser-render-scheduler
+    environment:
+      - API_URL=http://browser-render:8080
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-*/10 * * * *}  # 10分おき (環境変数で変更可能)
+    command: >
+      sh -c "
+        apk add --no-cache curl &&
+        echo '*/10 * * * * curl -s http://browser-render:8080/v1/vehicle/data || echo \"Venus API call failed at \$(date)\"' > /etc/crontabs/root &&
+        echo 'Scheduler started with cron: */10 * * * *' &&
+        crond -f -d 8
+      "
+    restart: unless-stopped
+    depends_on:
+      - browser-render
+
 volumes:
   browser-data:
   browser-logs:
