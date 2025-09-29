@@ -16,10 +16,7 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Update go.mod if needed
-RUN go mod tidy
-
-# Build the application
+# Build the application (skip go mod tidy as imports are internal)
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o browser_render ./src
 
 # Runtime stage
