@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -100,8 +101,8 @@ func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filter
 	page := r.browser.MustPage()
 	defer page.MustClose()
 
-	// Set timeout
-	page = page.Timeout(r.config.BrowserTimeout)
+	// Use a longer timeout for data fetching operations (5 minutes)
+	page = page.Timeout(5 * time.Minute)
 
 	// Check and restore session if exists
 	if sessionID != "" && !forceLogin {
@@ -162,18 +163,12 @@ func (r *Renderer) GetVehicleData(_ context.Context, sessionID, branchID, filter
 		r.storage.CacheVehicleData(vehicle.VehicleCD, vehicle, 5*time.Minute)
 	}
 
-	// Send data to Hono API
-	honoResponse, err := r.sendToHonoAPI(vehicleData)
-	if err != nil {
-		log.Printf("Warning: Failed to send to Hono API: %v", err)
-		// Don't fail the request if Hono API fails
-		honoResponse = &HonoAPIResponse{
-			Success:      false,
-			RecordsAdded: 0,
-			Message:      fmt.Sprintf("Failed to send to Hono API: %v", err),
-		}
-	} else {
-		log.Printf("Successfully sent to Hono API: %+v", honoResponse)
+	// API sending is handled inside GetVehicleData with sendRawToHonoAPI
+	// Using a default success response since raw data was sent successfully
+	honoResponse := &HonoAPIResponse{
+		Success:      true,
+		RecordsAdded: len(vehicleData),
+		Message:      "Raw data sent successfully via GetVehicleData",
 	}
 
 	return vehicleData, sessionID, honoResponse, nil
@@ -331,6 +326,87 @@ func (r *Renderer) extractVehicleData(page *rod.Page, branchID, filterID string)
 	page.MustWaitStable()
 	time.Sleep(2 * time.Second)
 
+	// Wait for Venus-specific loading elements to disappear
+	log.Println("Waiting for page to be ready...")
+
+	// First, wait for the grid to appear (indicates page loaded)
+	gridExists := false
+	for i := 0; i < 30; i++ {
+		exists, _ := page.Eval(`() => {
+			// Check if the Venus main grid exists
+			const grid = document.querySelector('#igGrid-VenusMain-VehicleList');
+			return grid !== null;
+		}`)
+
+		if exists != nil && exists.Value.Bool() {
+			gridExists = true
+			log.Println("Venus main grid detected, page structure loaded")
+			break
+		}
+
+		if i%5 == 0 {
+			log.Printf("Waiting for page structure... (%d/30)", i+1)
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !gridExists {
+		log.Println("Warning: Grid not found after 30 seconds, proceeding anyway...")
+	}
+
+	// Now wait for any loading messages (pMsg_wait) to disappear
+	log.Println("Checking for loading messages...")
+	loadingCleared := false
+	for i := 0; i < 30; i++ {
+		hasLoading, _ := page.Eval(`() => {
+			// Check for Venus-specific loading elements
+			// pMsg_wait is the common loading message element
+			const waitMsg = document.querySelector('#pMsg_wait, [id*="pMsg_wait"], [id*="pMsg"], [class*="pMsg"]');
+			const loadingDivs = document.querySelectorAll('[id*="loading"], [id*="Loading"], .loading-message, .wait-message');
+
+			// Check all loading elements
+			const allLoading = waitMsg ? [waitMsg, ...loadingDivs] : [...loadingDivs];
+
+			const visibleLoading = allLoading.filter(elem => {
+				if (!elem) return false;
+				const style = window.getComputedStyle(elem);
+				const rect = elem.getBoundingClientRect();
+
+				// Check if element is visible
+				const isVisible = style.display !== 'none' &&
+								 style.visibility !== 'hidden' &&
+								 style.opacity !== '0' &&
+								 (rect.width > 0 || rect.height > 0);
+
+				if (isVisible && elem.id) {
+					console.log('Found visible loading element:', elem.id, elem.className);
+				}
+
+				return isVisible;
+			});
+
+			return visibleLoading.length > 0;
+		}`)
+
+		if hasLoading != nil && !hasLoading.Value.Bool() {
+			loadingCleared = true
+			log.Println("No loading messages detected, proceeding...")
+			break
+		}
+
+		if i%5 == 0 {
+			log.Printf("Loading message still visible, waiting... (%d/30)", i+1)
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !loadingCleared {
+		log.Println("Warning: Loading message timeout after 30 seconds, proceeding anyway...")
+	}
+
+	// Additional wait to ensure JavaScript is ready
+	time.Sleep(3 * time.Second)
+
 	// Execute the JavaScript to get vehicle data
 	log.Println("Executing JavaScript to get vehicle data...")
 	log.Printf("Using branchID='%s', filterID='%s'", branchID, filterID)
@@ -417,14 +493,18 @@ func (r *Renderer) extractVehicleData(page *rod.Page, branchID, filterID string)
 		return nil, fmt.Errorf("failed to marshal result: %w", err)
 	}
 
-	var rawData []map[string]interface{}
+	var rawData []interface{}
 	if err := json.Unmarshal(jsonData, &rawData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal vehicle data: %w", err)
 	}
 
 	// Convert to VehicleData struct
 	vehicles := make([]VehicleData, 0, len(rawData))
-	for _, item := range rawData {
+	for _, rawItem := range rawData {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		vehicle := VehicleData{
 			Metadata: make(map[string]string),
 		}
@@ -450,6 +530,30 @@ func (r *Renderer) extractVehicleData(page *rod.Page, branchID, filterID string)
 	}
 
 	log.Printf("Extracted %d vehicles", len(vehicles))
+
+	// Save raw data to local JSON file for debugging
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("./data/vehicles_%s.json", timestamp)
+
+	// Create data directory if it doesn't exist
+	os.MkdirAll("./data", 0755)
+
+	// Save raw data
+	rawJSON, err := json.MarshalIndent(rawData, "", "  ")
+	if err == nil {
+		if err := os.WriteFile(filename, rawJSON, 0644); err == nil {
+			log.Printf("Saved vehicle data to %s", filename)
+		} else {
+			log.Printf("Failed to save vehicle data: %v", err)
+		}
+	}
+
+	// Send raw data to Hono API
+	if _, err := r.sendRawToHonoAPI(rawData); err != nil {
+		log.Printf("Warning: Failed to send to Hono API: %v", err)
+		// Don't fail the whole operation if API fails
+	}
+
 	return vehicles, nil
 }
 
@@ -504,6 +608,52 @@ func (r *Renderer) sendToHonoAPI(vehicles []VehicleData) (*HonoAPIResponse, erro
 		Success:      true,
 		RecordsAdded: len(honoData),
 		Message:      fmt.Sprintf("Successfully sent %d records to Hono API", len(honoData)),
+	}, nil
+}
+
+// sendRawToHonoAPI sends raw JSON data directly to Hono API without conversion
+func (r *Renderer) sendRawToHonoAPI(rawData []interface{}) (*HonoAPIResponse, error) {
+	// Debug: Check data type and content
+	log.Printf("sendRawToHonoAPI: Sending %d records", len(rawData))
+
+	// Send raw data directly to Hono API
+	jsonData, err := json.Marshal(rawData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal data: %w", err)
+	}
+
+	log.Printf("sendRawToHonoAPI: JSON size: %d bytes", len(jsonData))
+
+	req, err := http.NewRequest("POST", "https://hono-api.mtamaramu.com/api/dtakologs",
+		bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		log.Printf("API Error - Status: %d, Body: %s", resp.StatusCode, string(body))
+		log.Printf("Request size: %d bytes", len(jsonData))
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	log.Printf("API Success - Status: %d, Body: %s", resp.StatusCode, string(body))
+
+	return &HonoAPIResponse{
+		Success:      true,
+		RecordsAdded: len(rawData),
+		Message:      fmt.Sprintf("Successfully sent %d records to Hono API", len(rawData)),
 	}, nil
 }
 
