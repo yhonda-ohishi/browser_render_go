@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  browser-render:
+    image: ghcr.io/yhonda-ohishi/browser-render-go:latest
+    container_name: browser-render-server
+    environment:
+      - USER_NAME=${USER_NAME}
+      - COMP_ID=${COMP_ID}
+      - USER_PASS=${USER_PASS}
+      - HTTP_PORT=8080
+      - BROWSER_HEADLESS=true
+      - BROWSER_DEBUG=false
+      - SQLITE_PATH=/app/data/browser_render.db
+      - SESSION_TTL=10m
+      - COOKIE_TTL=24h
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
