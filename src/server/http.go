@@ -69,82 +69,53 @@ func (s *HTTPServer) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 // Vehicle data endpoint
 func (s *HTTPServer) handleVehicleData(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		s.sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req struct {
-		BranchID   string `json:"branch_id"`
-		FilterID   string `json:"filter_id"`
-		ForceLogin bool   `json:"force_login"`
-	}
+	// Fixed values
+	branchID := "00000000"
+	filterID := "0"
+	forceLogin := false
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.sendError(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
+	// Start background processing
+	go func() {
+		log.Printf("Starting background vehicle data retrieval...")
 
-	// Default values
-	if req.BranchID == "" {
-		req.BranchID = "00000000"
-	}
-	if req.FilterID == "" {
-		req.FilterID = "0"
-	}
+		// Create a context with timeout for the background operation
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
 
-	// Get vehicle data - use extended timeout for browser operations
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
-	defer cancel()
+		vehicleData, sessionID, honoAPIResponse, err := s.renderer.GetVehicleData(
+			ctx,
+			"", // Session ID from cookie if needed
+			branchID,
+			filterID,
+			forceLogin,
+		)
 
-	vehicleData, sessionID, honoAPIResponse, err := s.renderer.GetVehicleData(
-		ctx,
-		"", // Session ID from cookie if needed
-		req.BranchID,
-		req.FilterID,
-		req.ForceLogin,
-	)
-	if err != nil {
-		log.Printf("Error getting vehicle data: %v", err)
-		s.sendJSON(w, map[string]interface{}{
-			"status": err.Error(),
-			"data":   []interface{}{},
-		}, http.StatusInternalServerError)
-		return
-	}
-
-	// Convert to response format
-	data := make([]map[string]interface{}, len(vehicleData))
-	for i, v := range vehicleData {
-		item := map[string]interface{}{
-			"VehicleCD":   v.VehicleCD,
-			"VehicleName": v.VehicleName,
-			"Status":      v.Status,
+		if err != nil {
+			log.Printf("Error getting vehicle data in background: %v", err)
+			return
 		}
-		// Add metadata
-		for k, val := range v.Metadata {
-			item[k] = val
+
+		log.Printf("Successfully retrieved %d vehicles in background", len(vehicleData))
+		log.Printf("Session ID: %s", sessionID)
+
+		if honoAPIResponse != nil {
+			log.Printf("Hono API Response - Success: %v, Records Added: %d, Total: %d",
+				honoAPIResponse.Success,
+				honoAPIResponse.RecordsAdded,
+				honoAPIResponse.TotalRecords)
 		}
-		data[i] = item
-	}
+	}()
 
-	response := map[string]interface{}{
-		"status":     "complete",
-		"data":       data,
-		"session_id": sessionID,
-	}
-
-	// Add Hono API response if available
-	if honoAPIResponse != nil {
-		response["hono_api"] = map[string]interface{}{
-			"success":       honoAPIResponse.Success,
-			"records_added": honoAPIResponse.RecordsAdded,
-			"total_records": honoAPIResponse.TotalRecords,
-			"message":       honoAPIResponse.Message,
-		}
-	}
-
-	s.sendJSON(w, response, http.StatusOK)
+	// Return immediately
+	s.sendJSON(w, map[string]interface{}{
+		"status": "processing",
+		"message": "Vehicle data retrieval started in background",
+	}, http.StatusAccepted)
 }
 
 // Session check endpoint
