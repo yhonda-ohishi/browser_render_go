@@ -1,6 +1,6 @@
-module github.com/yourusername/browser_render_go
+module github.com/yhonda-ohishi/browser_render_go
 
-go 1.25.1
+go 1.21
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
