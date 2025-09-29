@@ -367,7 +367,10 @@ func (r *Renderer) extractVehicleData(page *rod.Page, branchID, filterID string)
 
 		completedObj, err := page.Eval(`() => window.__vehicleDataCompleted`)
 		if err != nil {
-			log.Printf("Error checking completion: %v", err)
+			// Skip logging for context errors as they're expected in background processing
+			if !strings.Contains(err.Error(), "context") {
+				log.Printf("Error checking completion: %v", err)
+			}
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}

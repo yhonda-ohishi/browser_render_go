@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,26 +9,29 @@ import (
 
 	"github.com/yhonda-ohishi/browser_render_go/src/browser"
 	"github.com/yhonda-ohishi/browser_render_go/src/config"
+	"github.com/yhonda-ohishi/browser_render_go/src/jobs"
 	"github.com/yhonda-ohishi/browser_render_go/src/storage"
 )
 
 // HTTPServer handles HTTP requests
 type HTTPServer struct {
-	config    *config.Config
-	storage   *storage.Storage
-	renderer  *browser.Renderer
-	startTime time.Time
-	mux       *http.ServeMux
+	config     *config.Config
+	storage    *storage.Storage
+	renderer   *browser.Renderer
+	jobManager *jobs.Manager
+	startTime  time.Time
+	mux        *http.ServeMux
 }
 
 // NewHTTPServer creates a new HTTP server instance
 func NewHTTPServer(cfg *config.Config, store *storage.Storage, renderer *browser.Renderer) *HTTPServer {
 	s := &HTTPServer{
-		config:    cfg,
-		storage:   store,
-		renderer:  renderer,
-		startTime: time.Now(),
-		mux:       http.NewServeMux(),
+		config:     cfg,
+		storage:    store,
+		renderer:   renderer,
+		jobManager: jobs.NewManager(renderer),
+		startTime:  time.Now(),
+		mux:        http.NewServeMux(),
 	}
 	s.setupRoutes()
 	return s
@@ -38,6 +40,8 @@ func NewHTTPServer(cfg *config.Config, store *storage.Storage, renderer *browser
 func (s *HTTPServer) setupRoutes() {
 	// API endpoints
 	s.mux.HandleFunc("/v1/vehicle/data", s.handleVehicleData)
+	s.mux.HandleFunc("/v1/job/", s.handleJobStatus)
+	s.mux.HandleFunc("/v1/jobs", s.handleJobsList)
 	s.mux.HandleFunc("/v1/session/check", s.handleSessionCheck)
 	s.mux.HandleFunc("/v1/session/clear", s.handleSessionClear)
 
@@ -67,62 +71,60 @@ func (s *HTTPServer) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// Vehicle data endpoint
+// Vehicle data endpoint - creates a new job
 func (s *HTTPServer) handleVehicleData(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Fixed values
-	branchID := "00000000"
-	filterID := "0"
-	forceLogin := false
+	// Create a new job
+	jobID := s.jobManager.CreateJob()
+	log.Printf("Created new job: %s", jobID)
 
-	// Start background processing
-	go func() {
-		// Recover from panic to prevent server crash
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Recovered from panic in background processing: %v", r)
-			}
-		}()
-
-		log.Printf("Starting background vehicle data retrieval...")
-
-		// Create a context with longer timeout for the background operation
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-		defer cancel()
-
-		vehicleData, sessionID, honoAPIResponse, err := s.renderer.GetVehicleData(
-			ctx,
-			"", // Session ID from cookie if needed
-			branchID,
-			filterID,
-			forceLogin,
-		)
-
-		if err != nil {
-			log.Printf("Error getting vehicle data in background: %v", err)
-			return
-		}
-
-		log.Printf("Successfully retrieved %d vehicles in background", len(vehicleData))
-		log.Printf("Session ID: %s", sessionID)
-
-		if honoAPIResponse != nil {
-			log.Printf("Hono API Response - Success: %v, Records Added: %d, Total: %d",
-				honoAPIResponse.Success,
-				honoAPIResponse.RecordsAdded,
-				honoAPIResponse.TotalRecords)
-		}
-	}()
-
-	// Return immediately
+	// Return job ID immediately
 	s.sendJSON(w, map[string]interface{}{
-		"status": "processing",
-		"message": "Vehicle data retrieval started in background",
+		"job_id":  jobID,
+		"status":  "pending",
+		"message": "Job created successfully. Use /v1/job/{id} to check status.",
 	}, http.StatusAccepted)
+}
+
+// Job status endpoint
+func (s *HTTPServer) handleJobStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract job ID from URL path
+	jobID := r.URL.Path[len("/v1/job/"):]
+	if jobID == "" {
+		s.sendError(w, "Job ID is required", http.StatusBadRequest)
+		return
+	}
+
+	job, err := s.jobManager.GetJob(jobID)
+	if err != nil {
+		s.sendError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	s.sendJSON(w, job, http.StatusOK)
+}
+
+// Jobs list endpoint
+func (s *HTTPServer) handleJobsList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	jobs := s.jobManager.GetAllJobs()
+	s.sendJSON(w, map[string]interface{}{
+		"jobs":  jobs,
+		"count": len(jobs),
+	}, http.StatusOK)
 }
 
 // Session check endpoint
